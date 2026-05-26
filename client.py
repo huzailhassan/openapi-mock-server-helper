@@ -95,6 +95,51 @@ def decrypt_payload(
 
 """
 |--------------------------------------------------------------------------
+| MANUAL DECRYPT
+|--------------------------------------------------------------------------
+"""
+
+def decrypt_text():
+
+    print('\n==============================')
+    print(' 手动解密 ')
+    print('==============================')
+
+    nonce = input(
+        '请输入 nonce: '
+    ).strip()
+
+    payload = input(
+        '请输入 payload: '
+    ).strip()
+
+    try:
+
+        result = decrypt_payload(
+            nonce,
+            payload
+        )
+
+        print('\n==============================')
+        print('解密结果')
+        print('==============================')
+
+        print(
+            json.dumps(
+                result,
+                indent=2,
+                ensure_ascii=False
+            )
+        )
+
+    except Exception as e:
+
+        print('\n解密失败:')
+        print(str(e))
+
+
+"""
+|--------------------------------------------------------------------------
 | SIGN
 |--------------------------------------------------------------------------
 """
@@ -281,7 +326,7 @@ def login_request():
     ).strip() or 'en'
 
     send_request(
-        '/api/v1/user/login',
+        '/dev/api/v1/user/login',
         payload
     )
 
@@ -297,7 +342,7 @@ def balance_request():
     payload = build_common_payload()
 
     send_request(
-        '/api/v1/wallet/balance',
+        '/dev/api/v1/wallet/balance',
         payload
     )
 
@@ -321,7 +366,7 @@ def bet_request():
     )
 
     send_request(
-        '/api/v1/wallet/bet',
+        '/dev/api/v1/wallet/bet',
         payload
     )
 
@@ -345,7 +390,7 @@ def payout_request():
     )
 
     send_request(
-        '/api/v1/wallet/payout',
+        '/dev/api/v1/wallet/payout',
         payload
     )
 
@@ -369,7 +414,7 @@ def rollback_request():
     ).strip()
 
     send_request(
-        '/api/v1/wallet/rollback',
+        '/dev/api/v1/wallet/rollback',
         payload
     )
 
@@ -426,6 +471,7 @@ def menu():
         print('4. Payout')
         print('5. Rollback')
         print('6. Custom Request')
+        print('7. Decrypt Text')
         print('0. Exit')
         print('==============================')
 
@@ -456,6 +502,10 @@ def menu():
         elif choice == '6':
 
             custom_request()
+
+        elif choice == '7':
+
+            decrypt_text()
 
         elif choice == '0':
 
