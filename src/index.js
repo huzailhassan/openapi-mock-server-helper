@@ -1,566 +1,877 @@
-// src/index.js
-
 import express from 'express';
-import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@apollo/server/express4';
-import bodyParser from 'body-parser';
+import crypto from 'crypto';
 import cors from 'cors';
+import bodyParser from 'body-parser';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-
 const app = express();
 
 app.use(cors());
-app.use(bodyParser.json());
+
+app.use(bodyParser.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
 
 /*
 |--------------------------------------------------------------------------
-| GraphQL Schema
+| ENV
 |--------------------------------------------------------------------------
 */
 
-const typeDefs = `#graphql
+const API_KEY =
+  process.env.API_KEY || 'ak_live_demo';
 
-  type User {
-    id: Int!
-    userId: Int!
-    environment: String!
-    username: String!
-    balance: Float!
-    createdAt: String!
-  }
+const API_SECRET =
+  process.env.API_SECRET ||
+  'test-secret-key';
 
-  type Query {
-    user(
-      userId: Int!
-      environment: String!
-    ): User
-
-    users: [User!]!
-  }
-
-  type Mutation {
-
-    addBalance(
-      userId: Int!
-      amount: Float!
-      environment: String!
-    ): User!
-
-    deductBalance(
-      userId: Int!
-      amount: Float!
-      environment: String!
-    ): User!
-
-    clearBalance(
-      userId: Int!
-      environment: String!
-    ): User!
-
-  }
-
-`;
-
-const resolvers = {
-
-  Query: {
-
-    users: async () => {
-      return await prisma.user.findMany();
-    },
-
-    user: async (_, { userId, environment }) => {
-
-      return await prisma.user.findUnique({
-        where: {
-          userId_environment: {
-            userId,
-            environment
-          }
-        }
-      });
-
-    }
-
-  },
-
-  Mutation: {
-
-    addBalance: async (_, {
-      userId,
-      amount,
-      environment
-    }) => {
-
-      return await prisma.user.upsert({
-
-        where: {
-          userId_environment: {
-            userId,
-            environment
-          }
-        },
-
-        update: {
-          balance: {
-            increment: amount
-          }
-        },
-
-        create: {
-          userId,
-          environment,
-          username: `user_${userId}`,
-          balance: amount
-        }
-
-      });
-
-    },
-
-    deductBalance: async (_, {
-      userId,
-      amount,
-      environment
-    }) => {
-
-      const user = await prisma.user.findUnique({
-        where: {
-          userId_environment: {
-            userId,
-            environment
-          }
-        }
-      });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      if (user.balance < amount) {
-        throw new Error('Insufficient balance');
-      }
-
-      return await prisma.user.update({
-
-        where: {
-          userId_environment: {
-            userId,
-            environment
-          }
-        },
-
-        data: {
-          balance: {
-            decrement: amount
-          }
-        }
-
-      });
-
-    },
-
-    clearBalance: async (_, {
-      userId,
-      environment
-    }) => {
-
-      return await prisma.user.update({
-
-        where: {
-          userId_environment: {
-            userId,
-            environment
-          }
-        },
-
-        data: {
-          balance: 0
-        }
-
-      });
-
-    }
-
-  }
-
-};
-
-/*
-|--------------------------------------------------------------------------
-| Apollo Server (PRIVATE ONLY)
-|--------------------------------------------------------------------------
-*/
-
-const apolloServer = new ApolloServer({
-  typeDefs,
-  resolvers,
-});
-
-await apolloServer.start();
-
-/*
-|--------------------------------------------------------------------------
-| INTERNAL GRAPHQL EXECUTOR
-|--------------------------------------------------------------------------
-*/
-
-const executeOperation = async (query, variables = {}) => {
-
-  const result = await apolloServer.executeOperation({
-    query,
-    variables
-  });
-
-  if (result.body.kind === 'single') {
-
-    const singleResult = result.body.singleResult;
-
-    if (singleResult.errors) {
-      throw new Error(singleResult.errors[0].message);
-    }
-
-    return singleResult.data;
-  }
-
-  throw new Error('GraphQL execution failed');
-
-};
-
-/*
-|--------------------------------------------------------------------------
-| REST API ENDPOINTS
-|--------------------------------------------------------------------------
-*/
+const OP =
+  process.env.OP || 'TEST';
 
 /**
- * LOGIN
- * POST /dev/api/v1/user/login
+ * base64 encoded 32 bytes
  */
-app.post('/dev/api/v1/user/login', async (req, res) => {
 
-  try {
+const PAYLOAD_KEY = Buffer.from(
+  process.env.PAYLOAD_KEY ||
+  'PGkJs5UPAqGq2jAdx36Y6wKJp9eQrTyU2vBnMqXz4Y8=',
+  'base64'
+);
 
-    const {
-      userId,
-      environment = 'dev'
-    } = req.body;
+/*
+|--------------------------------------------------------------------------
+| HELPERS
+|--------------------------------------------------------------------------
+*/
 
-    let data = await executeOperation(
+const usedNonces = new Map();
 
-      `
-      query GetUser($userId: Int!, $environment: String!) {
-        user(userId: $userId, environment: $environment) {
-          id
-          userId
-          username
-          balance
-          environment
-          createdAt
-        }
-      }
-      `,
+const transactionCache =
+  new Map();
 
-      {
-        userId,
-        environment
-      }
+const generateNonce = () => {
+  return crypto.randomBytes(12);
+};
 
+/**
+ * canonical = query + "\n" + rawBody
+ */
+
+const signPayload = (
+  queryString = '',
+  rawBody = ''
+) => {
+
+  const canonical =
+    `${queryString}\n${rawBody}`;
+
+  return crypto
+    .createHmac(
+      'sha256',
+      API_SECRET
+    )
+    .update(canonical, 'utf8')
+    .digest('hex');
+
+};
+
+const encryptPayload = (
+  payloadObject
+) => {
+
+  const nonce =
+    generateNonce();
+
+  const cipher =
+    crypto.createCipheriv(
+      'aes-256-gcm',
+      PAYLOAD_KEY,
+      nonce
     );
 
-    if (!data.user) {
+  const plaintext = Buffer.from(
+    JSON.stringify(payloadObject),
+    'utf8'
+  );
 
-      data = await executeOperation(
+  const encrypted =
+    Buffer.concat([
+      cipher.update(plaintext),
+      cipher.final()
+    ]);
 
-        `
-        mutation AddBalance(
-          $userId: Int!,
-          $amount: Float!,
-          $environment: String!
-        ) {
-          addBalance(
-            userId: $userId,
-            amount: $amount,
-            environment: $environment
-          ) {
-            id
-            userId
-            username
-            balance
-            environment
-            createdAt
+  const tag =
+    cipher.getAuthTag();
+
+  return {
+    nonce:
+      nonce.toString('base64'),
+
+    payload:
+      Buffer.concat([
+        encrypted,
+        tag
+      ]).toString('base64')
+  };
+
+};
+
+const decryptPayload = (
+  nonceB64,
+  payloadB64
+) => {
+
+  const nonce = Buffer.from(
+    nonceB64,
+    'base64'
+  );
+
+  if (nonce.length !== 12) {
+    throw new Error(
+      'invalid nonce'
+    );
+  }
+
+  /**
+   * anti replay
+   */
+
+  if (
+    usedNonces.has(nonceB64)
+  ) {
+    throw new Error(
+      'nonce reused'
+    );
+  }
+
+  usedNonces.set(
+    nonceB64,
+    Date.now()
+  );
+
+  const payloadBuffer =
+    Buffer.from(
+      payloadB64,
+      'base64'
+    );
+
+  const tag =
+    payloadBuffer.subarray(
+      payloadBuffer.length - 16
+    );
+
+  const ciphertext =
+    payloadBuffer.subarray(
+      0,
+      payloadBuffer.length - 16
+    );
+
+  const decipher =
+    crypto.createDecipheriv(
+      'aes-256-gcm',
+      PAYLOAD_KEY,
+      nonce
+    );
+
+  decipher.setAuthTag(tag);
+
+  const decrypted =
+    Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final()
+    ]);
+
+  return JSON.parse(
+    decrypted.toString('utf8')
+  );
+
+};
+
+const verifySignature = (
+  req
+) => {
+
+  const signature =
+    req.headers['x-signature'];
+
+  const expected =
+    signPayload(
+      '',
+      req.rawBody
+    );
+
+  return signature === expected;
+
+};
+
+const validateTimestamp = (
+  requestAt
+) => {
+
+  const now = Date.now();
+
+  const diff = Math.abs(
+    now - requestAt
+  );
+
+  return diff <= 300000;
+
+};
+
+const validateHeaders = (
+  req
+) => {
+
+  const apiKey =
+    req.headers['x-api-key'];
+
+  if (
+    !apiKey ||
+    apiKey !== API_KEY
+  ) {
+    throw new Error(
+      'invalid api key'
+    );
+  }
+
+  if (
+    !verifySignature(req)
+  ) {
+    throw new Error(
+      'invalid signature'
+    );
+  }
+
+};
+
+const validateRequest = (
+  payload
+) => {
+
+  if (
+    !payload.requestId ||
+    !payload.requestAt
+  ) {
+
+    throw new Error(
+      'parameter invalid'
+    );
+
+  }
+
+  if (
+    !validateTimestamp(
+      payload.requestAt
+    )
+  ) {
+
+    throw new Error(
+      'request expired'
+    );
+
+  }
+
+};
+
+/**
+ * AUTO CREATE USER
+ */
+
+const findOrCreateUser =
+  async (userName) => {
+
+    let user =
+      await prisma.user.findUnique({
+        where: {
+          username: userName
+        }
+      });
+
+    if (!user) {
+
+      user =
+        await prisma.user.create({
+          data: {
+            username: userName,
+            balance: 0,
+            environment: 'prod',
+            userId: Date.now()
           }
-        }
-        `,
+        });
 
-        {
-          userId,
-          amount: 0,
-          environment
-        }
+    }
 
+    return user;
+
+  };
+
+const sendEncryptedResponse = (
+  res,
+  requestId,
+  success,
+  data = null,
+  errorCode = '',
+  errorMessage = ''
+) => {
+
+  const encrypted =
+    encryptPayload({
+      requestId,
+      success,
+      data,
+      errorCode,
+      errorMessage
+    });
+
+  const rawBody =
+    JSON.stringify(
+      encrypted
+    );
+
+  const signature =
+    signPayload(
+      '',
+      rawBody
+    );
+
+  res.setHeader(
+    'X-Signature',
+    signature
+  );
+
+  return res.json(
+    encrypted
+  );
+
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOGIN
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  '/api/v1/user/login',
+  async (req, res) => {
+
+    try {
+
+      validateHeaders(req);
+
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
+
+      validateRequest(
+        decrypted
       );
 
-      return res.json({
-        success: true,
-        user: data.addBalance
-      });
+      const {
+        requestId,
+        userName,
+        gameId,
+        language = 'en'
+      } = decrypted;
+
+      await findOrCreateUser(
+        userName
+      );
+
+      const sessionToken =
+        crypto.randomBytes(32)
+          .toString('hex');
+
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        {
+          gameUrl:
+            `https://game.example.com/start?gameId=${gameId}&lang=${language}`,
+          sessionToken
+        }
+      );
+
+    } catch (err) {
+
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'invalid-request',
+        err.message
+      );
 
     }
 
-    return res.json({
-      success: true,
-      user: data.user
-    });
-
-  } catch (err) {
-
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
-
   }
+);
 
-});
+/*
+|--------------------------------------------------------------------------
+| BALANCE
+|--------------------------------------------------------------------------
+*/
 
-/**
- * BALANCE
- * POST /dev/api/v1/wallet/balance
- */
-app.post('/dev/api/v1/wallet/balance', async (req, res) => {
+app.post(
+  '/api/v1/wallet/balance',
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      userId,
-      environment = 'dev'
-    } = req.body;
+      validateHeaders(req);
 
-    const data = await executeOperation(
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
 
-      `
-      query GetUser($userId: Int!, $environment: String!) {
-        user(userId: $userId, environment: $environment) {
-          userId
-          username
-          balance
-          environment
+      validateRequest(
+        decrypted
+      );
+
+      const {
+        requestId,
+        userName,
+        currency
+      } = decrypted;
+
+      const user =
+        await findOrCreateUser(
+          userName
+        );
+
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        {
+          userName,
+          currency,
+          balance: Number(
+            user.balance
+          )
         }
-      }
-      `,
+      );
 
-      {
-        userId,
-        environment
-      }
+    } catch (err) {
 
-    );
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'system-error',
+        err.message
+      );
 
-    return res.json({
-      success: true,
-      data: data.user
-    });
-
-  } catch (err) {
-
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
+    }
 
   }
+);
 
-});
+/*
+|--------------------------------------------------------------------------
+| BET
+|--------------------------------------------------------------------------
+*/
 
-/**
- * BET
- * POST /dev/api/v1/wallet/bet
- */
-app.post('/dev/api/v1/wallet/bet', async (req, res) => {
+app.post(
+  '/api/v1/wallet/bet',
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      userId,
-      amount,
-      environment = 'dev'
-    } = req.body;
+      validateHeaders(req);
 
-    const data = await executeOperation(
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
 
-      `
-      mutation DeductBalance(
-        $userId: Int!,
-        $amount: Float!,
-        $environment: String!
+      validateRequest(
+        decrypted
+      );
+
+      const {
+        requestId,
+        transactionId,
+        userName,
+        currency,
+        betAmount
+      } = decrypted;
+
+      /**
+       * idempotent
+       */
+
+      if (
+        transactionCache.has(
+          transactionId
+        )
       ) {
-        deductBalance(
-          userId: $userId,
-          amount: $amount,
-          environment: $environment
-        ) {
-          userId
-          username
-          balance
-          environment
-        }
-      }
-      `,
 
-      {
-        userId,
-        amount,
-        environment
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          true,
+          transactionCache.get(
+            transactionId
+          )
+        );
+
       }
 
-    );
+      const user =
+        await findOrCreateUser(
+          userName
+        );
 
-    return res.json({
-      success: true,
-      data: data.deductBalance
-    });
-
-  } catch (err) {
-
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
-
-  }
-
-});
-
-/**
- * PAYOUT
- * POST /dev/api/v1/wallet/payout
- */
-app.post('/dev/api/v1/wallet/payout', async (req, res) => {
-
-  try {
-
-    const {
-      userId,
-      amount,
-      environment = 'dev'
-    } = req.body;
-
-    const data = await executeOperation(
-
-      `
-      mutation AddBalance(
-        $userId: Int!,
-        $amount: Float!,
-        $environment: String!
+      if (
+        Number(user.balance) <
+        Number(betAmount)
       ) {
-        addBalance(
-          userId: $userId,
-          amount: $amount,
-          environment: $environment
-        ) {
-          userId
-          username
-          balance
-          environment
-        }
-      }
-      `,
 
-      {
-        userId,
-        amount,
-        environment
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          false,
+          null,
+          'insufficient-balance',
+          'insufficient balance'
+        );
+
       }
 
-    );
+      const updated =
+        await prisma.user.update({
+          where: {
+            username: userName
+          },
+          data: {
+            balance: {
+              decrement:
+                betAmount
+            }
+          }
+        });
 
-    return res.json({
-      success: true,
-      data: data.addBalance
-    });
+      const responseData = {
+        userName,
+        currency,
+        balance: Number(
+          updated.balance
+        )
+      };
 
-  } catch (err) {
+      transactionCache.set(
+        transactionId,
+        responseData
+      );
 
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        responseData
+      );
+
+    } catch (err) {
+
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'transaction-failed',
+        err.message
+      );
+
+    }
 
   }
+);
 
-});
+/*
+|--------------------------------------------------------------------------
+| PAYOUT
+|--------------------------------------------------------------------------
+*/
 
-/**
- * ROLLBACK
- * POST /dev/api/v1/wallet/rollback
- */
-app.post('/dev/api/v1/wallet/rollback', async (req, res) => {
+app.post(
+  '/api/v1/wallet/payout',
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      userId,
-      amount,
-      environment = 'dev'
-    } = req.body;
+      validateHeaders(req);
 
-    const data = await executeOperation(
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
 
-      `
-      mutation AddBalance(
-        $userId: Int!,
-        $amount: Float!,
-        $environment: String!
+      validateRequest(
+        decrypted
+      );
+
+      const {
+        requestId,
+        transactionId,
+        userName,
+        currency,
+        payAmount
+      } = decrypted;
+
+      if (
+        transactionCache.has(
+          transactionId
+        )
       ) {
-        addBalance(
-          userId: $userId,
-          amount: $amount,
-          environment: $environment
-        ) {
-          userId
-          username
-          balance
-          environment
-        }
-      }
-      `,
 
-      {
-        userId,
-        amount,
-        environment
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          true,
+          transactionCache.get(
+            transactionId
+          )
+        );
+
       }
 
-    );
+      await findOrCreateUser(
+        userName
+      );
 
-    return res.json({
-      success: true,
-      data: data.addBalance
-    });
+      const updated =
+        await prisma.user.update({
+          where: {
+            username: userName
+          },
+          data: {
+            balance: {
+              increment:
+                payAmount
+            }
+          }
+        });
 
-  } catch (err) {
+      const responseData = {
+        userName,
+        currency,
+        balance: Number(
+          updated.balance
+        )
+      };
 
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
+      transactionCache.set(
+        transactionId,
+        responseData
+      );
+
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        responseData
+      );
+
+    } catch (err) {
+
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'transaction-failed',
+        err.message
+      );
+
+    }
+
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| ROLLBACK
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  '/api/v1/wallet/rollback',
+  async (req, res) => {
+
+    try {
+
+      validateHeaders(req);
+
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
+
+      validateRequest(
+        decrypted
+      );
+
+      const {
+        requestId,
+        transactionId,
+        oriTransactionId,
+        userName,
+        currency
+      } = decrypted;
+
+      if (
+        transactionCache.has(
+          transactionId
+        )
+      ) {
+
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          true,
+          transactionCache.get(
+            transactionId
+          )
+        );
+
+      }
+
+      const original =
+        transactionCache.get(
+          oriTransactionId
+        );
+
+      if (!original) {
+
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          false,
+          null,
+          'not-found',
+          'original transaction not found'
+        );
+
+      }
+
+      await findOrCreateUser(
+        userName
+      );
+
+      /**
+       * rollback demo logic
+       */
+
+      const rollbackAmount =
+        100;
+
+      const updated =
+        await prisma.user.update({
+          where: {
+            username: userName
+          },
+          data: {
+            balance: {
+              increment:
+                rollbackAmount
+            }
+          }
+        });
+
+      const responseData = {
+        userName,
+        currency,
+        balance: Number(
+          updated.balance
+        )
+      };
+
+      transactionCache.set(
+        transactionId,
+        responseData
+      );
+
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        responseData
+      );
+
+    } catch (err) {
+
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'transaction-failed',
+        err.message
+      );
+
+    }
+
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| CLEANUP NONCE CACHE
+|--------------------------------------------------------------------------
+*/
+
+setInterval(() => {
+
+  const now = Date.now();
+
+  for (
+    const [key, value]
+    of usedNonces.entries()
+  ) {
+
+    if (
+      now - value > 300000
+    ) {
+      usedNonces.delete(key);
+    }
 
   }
 
-});
-
-
+}, 60000);
 
 /*
 |--------------------------------------------------------------------------
 | START SERVER
 |--------------------------------------------------------------------------
 */
-const PORT = process.env.PORT || 10000;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 REST API running on port ${PORT}`);
-});
+const PORT =
+  process.env.PORT || 4000;
+
+app.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+
+    console.log(
+      `🚀 API running on port ${PORT}`
+    );
+
+  }
+);
