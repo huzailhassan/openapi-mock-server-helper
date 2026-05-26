@@ -559,8 +559,8 @@ app.post('/dev/api/v1/wallet/rollback', async (req, res) => {
 | START SERVER
 |--------------------------------------------------------------------------
 */
-const PORT = 4000;
+const PORT = process.env.PORT || 10000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 REST API running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 REST API running on port ${PORT}`);
 });
