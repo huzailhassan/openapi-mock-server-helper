@@ -1,0 +1,28 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+
+  id          Int      @id @default(autoincrement())
+
+  userId      Int
+
+  environment String
+
+  username    String
+
+  balance     Float    @default(0)
+
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, environment])
+
+}
