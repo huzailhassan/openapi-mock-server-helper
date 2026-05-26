@@ -130,9 +130,11 @@ const decryptPayload = (
   );
 
   if (nonce.length !== 12) {
+
     throw new Error(
       'invalid nonce'
     );
+
   }
 
   /**
@@ -142,9 +144,11 @@ const decryptPayload = (
   if (
     usedNonces.has(nonceB64)
   ) {
+
     throw new Error(
       'nonce reused'
     );
+
   }
 
   usedNonces.set(
@@ -232,17 +236,21 @@ const validateHeaders = (
     !apiKey ||
     apiKey !== API_KEY
   ) {
+
     throw new Error(
       'invalid api key'
     );
+
   }
 
   if (
     !verifySignature(req)
   ) {
+
     throw new Error(
       'invalid signature'
     );
+
   }
 
 };
@@ -271,6 +279,33 @@ const validateRequest = (
     throw new Error(
       'request expired'
     );
+
+  }
+
+};
+
+/**
+ * REQUIRED FIELD VALIDATOR
+ */
+
+const requireFields = (
+  payload,
+  fields = []
+) => {
+
+  for (const field of fields) {
+
+    if (
+      payload[field] === undefined ||
+      payload[field] === null ||
+      payload[field] === ''
+    ) {
+
+      throw new Error(
+        `${field} is required`
+      );
+
+    }
 
   }
 
@@ -372,6 +407,14 @@ app.post(
         decrypted
       );
 
+      requireFields(
+        decrypted,
+        [
+          'userName',
+          'gameId'
+        ]
+      );
+
       const {
         requestId,
         userName,
@@ -438,6 +481,14 @@ app.post(
         decrypted
       );
 
+      requireFields(
+        decrypted,
+        [
+          'userName',
+          'currency'
+        ]
+      );
+
       const {
         requestId,
         userName,
@@ -500,6 +551,16 @@ app.post(
 
       validateRequest(
         decrypted
+      );
+
+      requireFields(
+        decrypted,
+        [
+          'transactionId',
+          'userName',
+          'currency',
+          'betAmount'
+        ]
       );
 
       const {
@@ -625,6 +686,16 @@ app.post(
         decrypted
       );
 
+      requireFields(
+        decrypted,
+        [
+          'transactionId',
+          'userName',
+          'currency',
+          'payAmount'
+        ]
+      );
+
       const {
         requestId,
         transactionId,
@@ -725,6 +796,16 @@ app.post(
 
       validateRequest(
         decrypted
+      );
+
+      requireFields(
+        decrypted,
+        [
+          'transactionId',
+          'oriTransactionId',
+          'userName',
+          'currency'
+        ]
       );
 
       const {
@@ -848,7 +929,9 @@ setInterval(() => {
     if (
       now - value > 300000
     ) {
+
       usedNonces.delete(key);
+
     }
 
   }
