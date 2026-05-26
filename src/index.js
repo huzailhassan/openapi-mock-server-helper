@@ -355,7 +355,7 @@ const sendEncryptedResponse = (
 */
 
 app.post(
-  '/api/v1/user/login',
+  '/dev/api/v1/user/login',
   async (req, res) => {
 
     try {
@@ -421,7 +421,7 @@ app.post(
 */
 
 app.post(
-  '/api/v1/wallet/balance',
+  '/dev/api/v1/wallet/balance',
   async (req, res) => {
 
     try {
@@ -485,7 +485,7 @@ app.post(
 */
 
 app.post(
-  '/api/v1/wallet/bet',
+  '/dev/api/v1/wallet/bet',
   async (req, res) => {
 
     try {
@@ -608,7 +608,7 @@ app.post(
 */
 
 app.post(
-  '/api/v1/wallet/payout',
+  '/dev/api/v1/wallet/payout',
   async (req, res) => {
 
     try {
@@ -710,7 +710,7 @@ app.post(
 */
 
 app.post(
-  '/api/v1/wallet/rollback',
+  '/dev/api/v1/wallet/rollback',
   async (req, res) => {
 
     try {
