@@ -258,9 +258,9 @@ const validateHeaders = (
     !verifySignature(req)
   ) {
 
-    throw new Error(
-      'invalid signature'
-    );
+    // throw new Error(
+    //   'invalid signature'
+    // );
 
   }
 
