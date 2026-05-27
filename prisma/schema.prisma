@@ -9,17 +9,17 @@ datasource db {
 
 model User {
 
-  id Int @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
 
-  userId BigInt
+  userId      BigInt
 
-  username String @unique
+  username    String   @unique()
 
   environment String
 
-  balance Float @default(0)
+  balance     Float    @default(0)
 
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@unique([userId, environment])
 
