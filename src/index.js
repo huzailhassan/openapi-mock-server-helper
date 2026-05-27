@@ -1,3 +1,4 @@
+```js
 import express from 'express';
 import crypto from 'crypto';
 import cors from 'cors';
@@ -39,6 +40,13 @@ const API_SECRET =
   process.env.API_SECRET ||
   'test-secret-key';
 
+const OP =
+  process.env.OP || 'TEST';
+
+/**
+ * base64 encoded 32 bytes
+ */
+
 const PAYLOAD_KEY = Buffer.from(
   process.env.PAYLOAD_KEY ||
   'PGkJs5UPAqGq2jAdx36Y6wKJp9eQrTyU2vBnMqXz4Y8=',
@@ -53,11 +61,16 @@ const PAYLOAD_KEY = Buffer.from(
 
 const usedNonces = new Map();
 
-const transactionCache = new Map();
+const transactionCache =
+  new Map();
 
 const generateNonce = () => {
   return crypto.randomBytes(12);
 };
+
+/**
+ * canonical = query + "\n" + rawBody
+ */
 
 const signPayload = (
   queryString = '',
@@ -111,7 +124,8 @@ const encryptPayload = (
 
     payload:
       Buffer.concat([
-        encrypted, tag
+        encrypted,
+        tag
       ]).toString('base64')
   };
 
@@ -128,11 +142,25 @@ const decryptPayload = (
   );
 
   if (nonce.length !== 12) {
-    throw new Error('invalid nonce');
+
+    throw new Error(
+      'invalid nonce'
+    );
+
   }
 
-  if (usedNonces.has(nonceB64)) {
-    throw new Error('nonce reused');
+  /**
+   * anti replay
+   */
+
+  if (
+    usedNonces.has(nonceB64)
+  ) {
+
+    throw new Error(
+      'nonce reused'
+    );
+
   }
 
   usedNonces.set(
@@ -195,6 +223,20 @@ const verifySignature = (
 
 };
 
+const validateTimestamp = (
+  requestAt
+) => {
+
+  const now = Date.now();
+
+  const diff = Math.abs(
+    now - requestAt
+  );
+
+  return diff <= 300000;
+
+};
+
 const validateHeaders = (
   req
 ) => {
@@ -225,6 +267,39 @@ const validateHeaders = (
 
 };
 
+const validateRequest = (
+  payload
+) => {
+
+  if (
+    !payload.requestId ||
+    !payload.requestAt
+  ) {
+
+    throw new Error(
+      'parameter invalid'
+    );
+
+  }
+
+  if (
+    !validateTimestamp(
+      payload.requestAt
+    )
+  ) {
+
+    throw new Error(
+      'request expired'
+    );
+
+  }
+
+};
+
+/**
+ * REQUIRED FIELD VALIDATOR
+ */
+
 const requireFields = (
   payload,
   fields = []
@@ -248,11 +323,9 @@ const requireFields = (
 
 };
 
-/*
-|--------------------------------------------------------------------------
-| USER
-|--------------------------------------------------------------------------
-*/
+/**
+ * AUTO CREATE USER
+ */
 
 const findOrCreateUser =
   async (userName) => {
@@ -270,12 +343,12 @@ const findOrCreateUser =
         await prisma.user.create({
           data: {
             username: userName,
-            balance: 1000,
+            balance: 0,
             environment: 'prod',
 
             /*
             |--------------------------------------------------------------------------
-            | FIX BIGINT
+            | FIXED BIGINT
             |--------------------------------------------------------------------------
             */
 
@@ -350,6 +423,10 @@ app.post(
           req.body.payload
         );
 
+      validateRequest(
+        decrypted
+      );
+
       requireFields(
         decrypted,
         [
@@ -369,13 +446,18 @@ app.post(
         userName
       );
 
+      const sessionToken =
+        crypto.randomBytes(32)
+          .toString('hex');
+
       return sendEncryptedResponse(
         res,
         requestId,
         true,
         {
           gameUrl:
-            `https://game.example.com/start?gameId=${gameId}&lang=${language}`
+            `https://game.example.com/start?gameId=${gameId}&lang=${language}`,
+          sessionToken
         }
       );
 
@@ -415,16 +497,22 @@ app.post(
           req.body.payload
         );
 
+      validateRequest(
+        decrypted
+      );
+
       requireFields(
         decrypted,
         [
-          'userName'
+          'userName',
+          'currency'
         ]
       );
 
       const {
         requestId,
-        userName
+        userName,
+        currency
       } = decrypted;
 
       const user =
@@ -438,8 +526,10 @@ app.post(
         true,
         {
           userName,
-          balance:
-            Number(user.balance)
+          currency,
+          balance: Number(
+            user.balance
+          )
         }
       );
 
@@ -479,11 +569,16 @@ app.post(
           req.body.payload
         );
 
+      validateRequest(
+        decrypted
+      );
+
       requireFields(
         decrypted,
         [
           'transactionId',
           'userName',
+          'currency',
           'betAmount'
         ]
       );
@@ -492,8 +587,13 @@ app.post(
         requestId,
         transactionId,
         userName,
+        currency,
         betAmount
       } = decrypted;
+
+      /**
+       * idempotent
+       */
 
       if (
         transactionCache.has(
@@ -548,8 +648,10 @@ app.post(
 
       const responseData = {
         userName,
-        balance:
-          Number(updated.balance)
+        currency,
+        balance: Number(
+          updated.balance
+        )
       };
 
       transactionCache.set(
@@ -600,11 +702,16 @@ app.post(
           req.body.payload
         );
 
+      validateRequest(
+        decrypted
+      );
+
       requireFields(
         decrypted,
         [
           'transactionId',
           'userName',
+          'currency',
           'payAmount'
         ]
       );
@@ -613,6 +720,7 @@ app.post(
         requestId,
         transactionId,
         userName,
+        currency,
         payAmount
       } = decrypted;
 
@@ -652,8 +760,10 @@ app.post(
 
       const responseData = {
         userName,
-        balance:
-          Number(updated.balance)
+        currency,
+        balance: Number(
+          updated.balance
+        )
       };
 
       transactionCache.set(
@@ -686,7 +796,171 @@ app.post(
 
 /*
 |--------------------------------------------------------------------------
-| START
+| ROLLBACK
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  '/dev/api/v1/wallet/rollback',
+  async (req, res) => {
+
+    try {
+
+      validateHeaders(req);
+
+      const decrypted =
+        decryptPayload(
+          req.body.nonce,
+          req.body.payload
+        );
+
+      validateRequest(
+        decrypted
+      );
+
+      requireFields(
+        decrypted,
+        [
+          'transactionId',
+          'oriTransactionId',
+          'userName',
+          'currency'
+        ]
+      );
+
+      const {
+        requestId,
+        transactionId,
+        oriTransactionId,
+        userName,
+        currency
+      } = decrypted;
+
+      if (
+        transactionCache.has(
+          transactionId
+        )
+      ) {
+
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          true,
+          transactionCache.get(
+            transactionId
+          )
+        );
+
+      }
+
+      const original =
+        transactionCache.get(
+          oriTransactionId
+        );
+
+      if (!original) {
+
+        return sendEncryptedResponse(
+          res,
+          requestId,
+          false,
+          null,
+          'not-found',
+          'original transaction not found'
+        );
+
+      }
+
+      await findOrCreateUser(
+        userName
+      );
+
+      /**
+       * rollback demo logic
+       */
+
+      const rollbackAmount =
+        100;
+
+      const updated =
+        await prisma.user.update({
+          where: {
+            username: userName
+          },
+          data: {
+            balance: {
+              increment:
+                rollbackAmount
+            }
+          }
+        });
+
+      const responseData = {
+        userName,
+        currency,
+        balance: Number(
+          updated.balance
+        )
+      };
+
+      transactionCache.set(
+        transactionId,
+        responseData
+      );
+
+      return sendEncryptedResponse(
+        res,
+        requestId,
+        true,
+        responseData
+      );
+
+    } catch (err) {
+
+      return sendEncryptedResponse(
+        res,
+        crypto.randomUUID(),
+        false,
+        null,
+        'transaction-failed',
+        err.message
+      );
+
+    }
+
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| CLEANUP NONCE CACHE
+|--------------------------------------------------------------------------
+*/
+
+setInterval(() => {
+
+  const now = Date.now();
+
+  for (
+    const [key, value]
+    of usedNonces.entries()
+  ) {
+
+    if (
+      now - value > 300000
+    ) {
+
+      usedNonces.delete(key);
+
+    }
+
+  }
+
+}, 60000);
+
+/*
+|--------------------------------------------------------------------------
+| START SERVER
 |--------------------------------------------------------------------------
 */
 
@@ -699,8 +973,9 @@ app.listen(
   () => {
 
     console.log(
-      `🚀 running on ${PORT}`
+      `🚀 API running on port ${PORT}`
     );
 
   }
 );
+```
