@@ -16,7 +16,7 @@ PRAGMA defer_foreign_keys=ON;
 PRAGMA foreign_keys=OFF;
 CREATE TABLE "new_User" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "userId" INTEGER NOT NULL,
+    "userId" BIGINT NOT NULL
     "environment" TEXT NOT NULL,
     "username" TEXT NOT NULL,
     "balance" REAL NOT NULL DEFAULT 0,
