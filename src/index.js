@@ -340,7 +340,7 @@ const findOrCreateUser =
             username: userName,
             balance: 0,
             environment: 'prod',
-            userId: Date.now()
+            userId: BigInt(Date.now())
           }
         });
 
