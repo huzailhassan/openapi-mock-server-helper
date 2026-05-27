@@ -287,9 +287,9 @@ const validateRequest = (
     )
   ) {
 
-    throw new Error(
-      'request expired'
-    );
+    // throw new Error(
+    //   'request expired'
+    // );
 
   }
 
