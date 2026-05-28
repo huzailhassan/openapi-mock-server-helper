@@ -42,34 +42,14 @@ const API_SECRET =
 const OP =
   process.env.OP || 'TEST';
 
-/**
- * base64 encoded 32 bytes
- */
-
-const PAYLOAD_KEY = Buffer.from(
-  process.env.PAYLOAD_KEY ||
-  'PGkJs5UPAqGq2jAdx36Y6wKJp9eQrTyU2vBnMqXz4Y8=',
-  'base64'
-);
-
 /*
 |--------------------------------------------------------------------------
 | HELPERS
 |--------------------------------------------------------------------------
 */
 
-const usedNonces = new Map();
-
 const transactionCache =
   new Map();
-
-const generateNonce = () => {
-  return crypto.randomBytes(12);
-};
-
-/**
- * canonical = query + "\n" + rawBody
- */
 
 const signPayload = (
   queryString = '',
@@ -86,122 +66,6 @@ const signPayload = (
     )
     .update(canonical, 'utf8')
     .digest('hex');
-
-};
-
-const encryptPayload = (
-  payloadObject
-) => {
-
-  const nonce =
-    generateNonce();
-
-  const cipher =
-    crypto.createCipheriv(
-      'aes-256-gcm',
-      PAYLOAD_KEY,
-      nonce
-    );
-
-  const plaintext = Buffer.from(
-    JSON.stringify(payloadObject),
-    'utf8'
-  );
-
-  const encrypted =
-    Buffer.concat([
-      cipher.update(plaintext),
-      cipher.final()
-    ]);
-
-  const tag =
-    cipher.getAuthTag();
-
-  return {
-    nonce:
-      nonce.toString('base64'),
-
-    payload:
-      Buffer.concat([
-        encrypted,
-        tag
-      ]).toString('base64')
-  };
-
-};
-
-const decryptPayload = (
-  nonceB64,
-  payloadB64
-) => {
-
-  const nonce = Buffer.from(
-    nonceB64,
-    'base64'
-  );
-
-  if (nonce.length !== 12) {
-
-    throw new Error(
-      'invalid nonce'
-    );
-
-  }
-
-  /**
-   * anti replay
-   */
-
-  if (
-    usedNonces.has(nonceB64)
-  ) {
-
-    throw new Error(
-      'nonce reused'
-    );
-
-  }
-
-  usedNonces.set(
-    nonceB64,
-    Date.now()
-  );
-
-  const payloadBuffer =
-    Buffer.from(
-      payloadB64,
-      'base64'
-    );
-
-  const tag =
-    payloadBuffer.subarray(
-      payloadBuffer.length - 16
-    );
-
-  const ciphertext =
-    payloadBuffer.subarray(
-      0,
-      payloadBuffer.length - 16
-    );
-
-  const decipher =
-    crypto.createDecipheriv(
-      'aes-256-gcm',
-      PAYLOAD_KEY,
-      nonce
-    );
-
-  decipher.setAuthTag(tag);
-
-  const decrypted =
-    Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]);
-
-  return JSON.parse(
-    decrypted.toString('utf8')
-  );
 
 };
 
@@ -254,15 +118,9 @@ const validateHeaders = (
 
   }
 
-  if (
-    !verifySignature(req)
-  ) {
-
-    // throw new Error(
-    //   'invalid signature'
-    // );
-
-  }
+  /**
+   * SIGNATURE DISABLED
+   */
 
 };
 
@@ -281,17 +139,9 @@ const validateRequest = (
 
   }
 
-  if (
-    !validateTimestamp(
-      payload.requestAt
-    )
-  ) {
-
-    // throw new Error(
-    //   'request expired'
-    // );
-
-  }
+  /**
+   * TIMESTAMP CHECK DISABLED
+   */
 
 };
 
@@ -371,34 +221,13 @@ const sendEncryptedResponse = (
   errorMessage = ''
 ) => {
 
-  const encrypted =
-    encryptPayload({
-      requestId,
-      success,
-      data,
-      errorCode,
-      errorMessage
-    });
-
-  const rawBody =
-    JSON.stringify(
-      encrypted
-    );
-
-  const signature =
-    signPayload(
-      '',
-      rawBody
-    );
-
-  res.setHeader(
-    'X-Signature',
-    signature
-  );
-
-  return res.json(
-    encrypted
-  );
+  return res.json({
+    requestId,
+    success,
+    data,
+    errorCode,
+    errorMessage
+  });
 
 };
 
@@ -417,10 +246,7 @@ app.post(
       validateHeaders(req);
 
       const decrypted =
-        decryptPayload(
-          req.body.nonce,
-          req.body.payload
-        );
+        req.body;
 
       validateRequest(
         decrypted
@@ -491,10 +317,7 @@ app.post(
       validateHeaders(req);
 
       const decrypted =
-        decryptPayload(
-          req.body.nonce,
-          req.body.payload
-        );
+        req.body;
 
       validateRequest(
         decrypted
@@ -563,10 +386,7 @@ app.post(
       validateHeaders(req);
 
       const decrypted =
-        decryptPayload(
-          req.body.nonce,
-          req.body.payload
-        );
+        req.body;
 
       validateRequest(
         decrypted
@@ -696,10 +516,7 @@ app.post(
       validateHeaders(req);
 
       const decrypted =
-        decryptPayload(
-          req.body.nonce,
-          req.body.payload
-        );
+        req.body;
 
       validateRequest(
         decrypted
@@ -808,10 +625,7 @@ app.post(
       validateHeaders(req);
 
       const decrypted =
-        decryptPayload(
-          req.body.nonce,
-          req.body.payload
-        );
+        req.body;
 
       validateRequest(
         decrypted
@@ -929,33 +743,6 @@ app.post(
 
   }
 );
-
-/*
-|--------------------------------------------------------------------------
-| CLEANUP NONCE CACHE
-|--------------------------------------------------------------------------
-*/
-
-setInterval(() => {
-
-  const now = Date.now();
-
-  for (
-    const [key, value]
-    of usedNonces.entries()
-  ) {
-
-    if (
-      now - value > 300000
-    ) {
-
-      usedNonces.delete(key);
-
-    }
-
-  }
-
-}, 60000);
 
 /*
 |--------------------------------------------------------------------------
