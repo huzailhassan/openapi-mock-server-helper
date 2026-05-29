@@ -1,0 +1,61 @@
+/**
+ * Example dynamic route: order.js
+ *
+ * Upload this file via POST /dev/api/v1/script/upload
+ * It will be auto-mounted at /dev/api/v1/order/*
+ *
+ * Rules:
+ *   - Must use ESM (import/export)
+ *   - Must export a default Express Router
+ *   - Can import from node_modules (express, crypto, etc.)
+ *   - Cannot import relative paths (../utils/helpers) from inside scripts/
+ *     unless you copy helpers there too; use absolute file:// imports if needed
+ */
+
+import { Router } from 'express';
+import crypto from 'crypto';
+
+const router = Router();
+
+// POST /dev/api/v1/order/create
+router.post('/create', async (req, res) => {
+  const { requestId, userName, amount, currency = 'USD' } = req.body;
+
+  if (!requestId || !userName || !amount) {
+    return res.json({
+      requestId: requestId || crypto.randomUUID(),
+      success: false,
+      errorCode: 'invalid-request',
+      errorMessage: 'requestId, userName and amount are required',
+    });
+  }
+
+  return res.json({
+    requestId,
+    success: true,
+    data: {
+      orderId: crypto.randomUUID(),
+      userName,
+      amount: Number(amount),
+      currency,
+      status: 'created',
+      createdAt: new Date().toISOString(),
+    },
+  });
+});
+
+// POST /dev/api/v1/order/status
+router.post('/status', async (req, res) => {
+  const { requestId, orderId } = req.body;
+
+  return res.json({
+    requestId,
+    success: true,
+    data: {
+      orderId,
+      status: 'pending',
+    },
+  });
+});
+
+export default router;

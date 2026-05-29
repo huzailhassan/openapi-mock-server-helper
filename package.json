@@ -1,0 +1,19 @@
+{
+  "name": "wallet-api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon --watch src --watch scripts --ext js src/app.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "body-parser": "^1.20.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.0",
+    "prisma": "^5.22.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
