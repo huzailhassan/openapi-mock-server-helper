@@ -30,25 +30,36 @@ router.post('/graphql', async (req, res) => {
 /*
 |--------------------------------------------------------------------------
 | DYNAMIC REST DISPATCHER
-| POST /endpoints/:schemaName/:operation
+| Matches any POST that starts with a schema's basePath
+| e.g. POST /dev/api/v1/wallet/bet
+|      POST /staging/api/v2/wallet/payout
 |--------------------------------------------------------------------------
 */
-router.post('/endpoints/:schemaName/:operation', async (req, res) => {
-  try {
-    const { schemaName, operation } = req.params;
-    const row = await prisma.gqlSchema.findUnique({ where: { name: schemaName } });
+export async function dynamicDispatcher(req, res, next) {
+  if (req.method !== 'POST') return next();
 
-    if (!row || !row.enabled) {
-      return res.status(404).json({ success: false, errorCode: 'not-found', errorMessage: 'schema not found or disabled' });
-    }
+  try {
+    // Load all enabled schemas
+    const rows = await prisma.gqlSchema.findMany({ where: { enabled: true } });
+
+    // Find matching schema by basePath prefix
+    const row = rows.find(r => {
+      const base = r.basePath.endsWith('/') ? r.basePath.slice(0, -1) : r.basePath;
+      return req.path.startsWith(base + '/') || req.path === base;
+    });
+
+    if (!row) return next();
+
+    const base = row.basePath.endsWith('/') ? row.basePath.slice(0, -1) : row.basePath;
+    const operation = req.path.slice(base.length + 1); // e.g. "bet"
+
+    if (!operation) return next();
 
     let endpoints = {};
     try { endpoints = JSON.parse(row.endpoints || '{}'); } catch {}
 
     const ep = endpoints[operation];
-    if (!ep) {
-      return res.status(404).json({ success: false, errorCode: 'not-found', errorMessage: `operation "${operation}" not defined` });
-    }
+    if (!ep) return next();
 
     const body = req.body;
     if (!body.requestId) return res.json({ requestId: crypto.randomUUID(), success: false, data: null, errorCode: 'invalid-request', errorMessage: 'requestId is required' });
@@ -84,7 +95,7 @@ router.post('/endpoints/:schemaName/:operation', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ success: false, errorCode: 'server-error', errorMessage: err.message });
   }
-});
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -95,7 +106,7 @@ router.get('/schema', async (req, res) => {
   try {
     const schemas = await prisma.gqlSchema.findMany({
       orderBy: { updatedAt: 'desc' },
-      select: { id: true, name: true, enabled: true, createdAt: true, updatedAt: true },
+      select: { id: true, name: true, basePath: true, environment: true, version: true, enabled: true, createdAt: true, updatedAt: true },
     });
     return ok(res, schemas);
   } catch (err) { return fail(res, err); }
@@ -111,14 +122,14 @@ router.get('/schema/:name', async (req, res) => {
 
 router.post('/schema', async (req, res) => {
   try {
-    const { name, typeDefs, resolvers, endpoints = '{}', enabled = true } = req.body;
+    const { name, basePath = '/rpc', environment = 'prod', version = 'v1', typeDefs, resolvers, endpoints = '{}', enabled = true } = req.body;
     if (!name)      throw new Error('name is required');
     if (!typeDefs)  throw new Error('typeDefs is required');
     if (!resolvers) throw new Error('resolvers is required');
     const schema = await prisma.gqlSchema.upsert({
       where: { name },
-      update: { typeDefs, resolvers, endpoints, enabled },
-      create: { name, typeDefs, resolvers, endpoints, enabled },
+      update: { basePath, environment, version, typeDefs, resolvers, endpoints, enabled },
+      create: { name, basePath, environment, version, typeDefs, resolvers, endpoints, enabled },
     });
     markDirty();
     return ok(res, schema);

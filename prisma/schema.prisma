@@ -18,13 +18,15 @@ model User {
 }
 
 model GqlSchema {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  typeDefs  String
-  resolvers String
-  endpoints String   @default("{}")
-  env       String   @default("{}")
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  environment String   @default("prod")
+  version     String   @default("v1")
+  basePath    String   @default("/rpc")
+  typeDefs    String
+  resolvers   String
+  endpoints   String   @default("{}")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

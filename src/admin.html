@@ -175,6 +175,9 @@ hr{border:none;border-top:1px solid #2d3748;margin:20px 0}
   <div class="editor-area">
     <div class="editor-toolbar" id="gqlToolbar">
       <span class="schema-title" id="gqlSchemaTitle"></span>
+      <input type="text" id="gqlBasePath" placeholder="/dev/api/v1/wallet" title="Base Path" style="background:#0f1117;border:1px solid #2d3748;color:#a78bfa;border-radius:6px;padding:4px 10px;font-size:12px;width:200px;font-family:monospace">
+      <input type="text" id="gqlEnvironment" placeholder="prod" title="Environment" style="background:#0f1117;border:1px solid #2d3748;color:#f6ad55;border-radius:6px;padding:4px 10px;font-size:12px;width:80px;font-family:monospace">
+      <input type="text" id="gqlVersion" placeholder="v1" title="Version" style="background:#0f1117;border:1px solid #2d3748;color:#68d391;border-radius:6px;padding:4px 10px;font-size:12px;width:60px;font-family:monospace">
       <div class="spacer"></div>
       <button class="btn btn-ghost btn-sm" id="gqlToggleBtn">禁用</button>
       <button class="btn btn-success btn-sm" id="gqlSaveBtn">💾 保存</button>
@@ -297,7 +300,7 @@ return {
 };</pre>
 
     <h3>3. REST 端点配置（JSON）</h3>
-    <p>每个端点定义请求参数、GraphQL query、字段映射。系统自动生成 <code>POST /endpoints/{schemaName}/{operation}</code> 路由。</p>
+    <p>每个端点定义请求参数、GraphQL query、字段映射。系统自动生成 <code>POST /rpc/{schemaName}/{operation}</code> 路由。</p>
     <table>
       <tr><th>字段</th><th>说明</th></tr>
       <tr><td><code>required</code></td><td>必填的请求体字段（除 requestId/requestAt 之外）</td></tr>
@@ -309,7 +312,7 @@ return {
     </table>
 
     <h3>4. 调用格式（自动生成）</h3>
-    <pre>curl -X POST "https://your-server.com/endpoints/wallet/bet" \
+    <pre>curl -X POST "https://your-server.com/rpc/wallet/bet" \
   -H "Content-Type: application/json" \
   -H "x-password: ak_live_demo" \
   -d '{
@@ -444,6 +447,9 @@ async function openSchema(name, data) {
     try { endpoints = JSON.parse(schema.endpoints || '{}'); } catch {}
 
     $('gqlSchemaTitle').textContent = name;
+    $('gqlBasePath').value = schema.basePath || '/rpc';
+    $('gqlEnvironment').value = schema.environment || 'prod';
+    $('gqlVersion').value = schema.version || 'v1';
     $('gqlToggleBtn').textContent = schema.enabled ? '禁用' : '启用';
     showEditorUI(true);
 
@@ -472,6 +478,9 @@ async function saveSchema() {
   try {
     const json = await api('POST', '/schema', {
       name: currentSchema.name,
+      basePath: $('gqlBasePath').value.trim() || '/rpc',
+      environment: $('gqlEnvironment').value.trim() || 'prod',
+      version: $('gqlVersion').value.trim() || 'v1',
       typeDefs: edTypedefs.getValue(),
       resolvers: edResolvers.getValue(),
       endpoints: JSON.stringify(endpoints),
@@ -557,10 +566,11 @@ function renderDocs() {
 
   const serverUrl = window.location.origin;
   const schemaName = currentSchema?.name || 'schema';
+  const docBasePath = ($('gqlBasePath')?.value?.trim() || currentSchema?.basePath || '/rpc').replace(/\/+$/, '');
 
   el.innerHTML = ops.map(op => {
     const ep = endpoints[op];
-    const url = `${serverUrl}/endpoints/${schemaName}/${op}`;
+    const url = `${serverUrl}${docBasePath}/${op}`;
     const required = ep.required || [];
     const optional = ep.optional || [];
     const allFields = ['requestId (auto)', 'requestAt (auto)', ...required, ...optional];
@@ -575,13 +585,12 @@ function renderDocs() {
 
     const curl = `curl -X POST "${url}" \\
   -H "Content-Type: application/json" \\
-  -H "x-password: ak_live_demo" \\
   -d '${JSON.stringify(exBody, null, 4)}'`;
 
     return `<div class="docs-endpoint">
       <div class="docs-header">
         <span class="docs-method">POST</span>
-        <span class="docs-path">/endpoints/${schemaName}/${op}</span>
+        <span class="docs-path">${docBasePath}/${op}</span>
       </div>
       <div class="docs-body">
         <div class="docs-section">

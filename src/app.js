@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import routes from './routes/index.js';
 import { dynamicLoader } from './routes/script.js';
+import { dynamicDispatcher } from './routes/graphql.js';
 
 BigInt.prototype.toJSON = function () { return this.toString(); };
 
@@ -18,12 +19,7 @@ app.use(bodyParser.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
-/*
-|--------------------------------------------------------------------------
-| ADMIN UI
-|--------------------------------------------------------------------------
-*/
-
+// Admin UI
 app.get('/admin', (_req, res) => {
   try {
     const html = readFileSync(join(__dirname, 'admin.html'), 'utf8');
@@ -34,30 +30,18 @@ app.get('/admin', (_req, res) => {
   }
 });
 
-/*
-|--------------------------------------------------------------------------
-| STATIC ROUTES
-|--------------------------------------------------------------------------
-*/
-
+// Static routes (schema CRUD + /graphql)
 for (const { prefix, router } of routes) {
   app.use(prefix, router);
 }
 
-/*
-|--------------------------------------------------------------------------
-| DYNAMIC SCRIPT ROUTES
-|--------------------------------------------------------------------------
-*/
+// Dynamic dispatcher — matches basePath of each schema
+app.use(dynamicDispatcher);
 
+// Dynamic JS script routes
 app.use(dynamicLoader.middleware());
 
-/*
-|--------------------------------------------------------------------------
-| 404
-|--------------------------------------------------------------------------
-*/
-
+// 404
 app.use((_req, res) => {
   res.status(404).json({ success: false, errorCode: 'not-found', errorMessage: 'route not found' });
 });
