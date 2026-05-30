@@ -297,7 +297,7 @@ return {
 };</pre>
 
     <h3>3. REST 端点配置（JSON）</h3>
-    <p>每个端点定义请求参数、GraphQL query、字段映射。系统自动生成 <code>POST /rpc/{schemaName}/{operation}</code> 路由。</p>
+    <p>每个端点定义请求参数、GraphQL query、字段映射。系统自动生成 <code>POST /endpoints/{schemaName}/{operation}</code> 路由。</p>
     <table>
       <tr><th>字段</th><th>说明</th></tr>
       <tr><td><code>required</code></td><td>必填的请求体字段（除 requestId/requestAt 之外）</td></tr>
@@ -309,7 +309,7 @@ return {
     </table>
 
     <h3>4. 调用格式（自动生成）</h3>
-    <pre>curl -X POST "https://your-server.com/rpc/wallet/bet" \
+    <pre>curl -X POST "https://your-server.com/endpoints/wallet/bet" \
   -H "Content-Type: application/json" \
   -H "x-password: ak_live_demo" \
   -d '{
@@ -560,7 +560,7 @@ function renderDocs() {
 
   el.innerHTML = ops.map(op => {
     const ep = endpoints[op];
-    const url = `${serverUrl}/rpc/${schemaName}/${op}`;
+    const url = `${serverUrl}/endpoints/${schemaName}/${op}`;
     const required = ep.required || [];
     const optional = ep.optional || [];
     const allFields = ['requestId (auto)', 'requestAt (auto)', ...required, ...optional];
@@ -581,7 +581,7 @@ function renderDocs() {
     return `<div class="docs-endpoint">
       <div class="docs-header">
         <span class="docs-method">POST</span>
-        <span class="docs-path">/rpc/${schemaName}/${op}</span>
+        <span class="docs-path">/endpoints/${schemaName}/${op}</span>
       </div>
       <div class="docs-body">
         <div class="docs-section">

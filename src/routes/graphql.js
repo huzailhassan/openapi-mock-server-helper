@@ -30,10 +30,10 @@ router.post('/graphql', async (req, res) => {
 /*
 |--------------------------------------------------------------------------
 | DYNAMIC REST DISPATCHER
-| POST /rpc/:schemaName/:operation
+| POST /endpoints/:schemaName/:operation
 |--------------------------------------------------------------------------
 */
-router.post('/rpc/:schemaName/:operation', async (req, res) => {
+router.post('/endpoints/:schemaName/:operation', async (req, res) => {
   try {
     const { schemaName, operation } = req.params;
     const row = await prisma.gqlSchema.findUnique({ where: { name: schemaName } });
