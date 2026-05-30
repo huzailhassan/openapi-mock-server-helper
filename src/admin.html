@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Manager</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:52px;background:#161b27;border-bottom:1px solid #2d3748;flex-shrink:0}
+.topbar h1{font-size:15px;font-weight:600;color:#a78bfa}
+.spacer{flex:1}
+.api-key-wrap{display:flex;align-items:center;gap:8px}
+.api-key-wrap label{font-size:12px;color:#718096}
+.api-key-wrap input{background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:4px 10px;font-size:12px;width:200px}
+.tabs{display:flex;background:#161b27;border-bottom:1px solid #2d3748;flex-shrink:0}
+.tab{padding:10px 20px;font-size:13px;font-weight:500;cursor:pointer;color:#718096;border-bottom:2px solid transparent;transition:all .15s;user-select:none}
+.tab:hover{color:#e2e8f0}
+.tab.active{color:#a78bfa;border-bottom-color:#a78bfa}
+.layout{display:flex;flex:1;overflow:hidden}
+.page{display:none;flex:1;overflow:hidden}
+.page.active{display:flex}
+.sidebar{width:240px;background:#161b27;border-right:1px solid #2d3748;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #2d3748}
+.sidebar-header span{font-size:11px;color:#718096;text-transform:uppercase;letter-spacing:.5px}
+.schema-list{flex:1;overflow-y:auto;padding:6px}
+.schema-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s}
+.schema-item:hover{background:#1e2535}
+.schema-item.active{background:#2d1f63}
+.schema-item .info{flex:1;min-width:0}
+.schema-item .name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.schema-item .meta{font-size:11px;color:#718096;margin-top:2px}
+.badge{font-size:10px;padding:1px 6px;border-radius:10px}
+.badge-on{background:#065f46;color:#a7f3d0}
+.badge-off{background:#374151;color:#9ca3af}
+.new-bar{padding:10px;border-top:1px solid #2d3748;display:flex;gap:6px}
+.new-bar input{flex:1;background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:5px 8px;font-size:12px}
+.new-bar input::placeholder{color:#4a5568}
+.btn{padding:6px 14px;border-radius:6px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#7c3aed;color:#fff}
+.btn-success{background:#059669;color:#fff}
+.btn-ghost{background:#2d3748;color:#e2e8f0}
+.btn-danger{color:#fc8181;background:none;border:1px solid #4a1515}
+.btn-sm{padding:4px 10px;font-size:12px}
+.editor-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.editor-toolbar{display:none;align-items:center;gap:8px;padding:8px 16px;background:#161b27;border-bottom:1px solid #2d3748;flex-shrink:0}
+.editor-toolbar .schema-title{font-size:13px;font-weight:600;color:#a78bfa}
+.editor-tabs{display:flex;background:#0f1117;border-bottom:1px solid #2d3748;flex-shrink:0;display:none}
+.editor-tab{padding:7px 16px;font-size:12px;cursor:pointer;color:#718096;border-bottom:2px solid transparent;transition:all .15s}
+.editor-tab:hover{color:#e2e8f0}
+.editor-tab.active{color:#a78bfa;border-bottom-color:#a78bfa}
+.editor-panels{flex:1;overflow:hidden;display:none}
+.editor-panel{display:none;height:100%;flex-direction:column}
+.editor-panel.active{display:flex}
+.CodeMirror{height:100%!important;font-size:13px;font-family:'Fira Code',monospace;line-height:1.6}
+.placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#4a5568;gap:12px}
+.placeholder .icon{font-size:48px}
+
+/* ENDPOINTS EDITOR */
+.ep-editor{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.ep-toolbar{padding:10px 16px;background:#161b27;border-bottom:1px solid #2d3748;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ep-toolbar input{background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:5px 10px;font-size:12px;width:140px}
+.ep-toolbar input::placeholder{color:#4a5568}
+.ep-list{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.ep-card{background:#161b27;border:1px solid #2d3748;border-radius:8px;overflow:hidden}
+.ep-card-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1a2035;cursor:pointer;user-select:none}
+.ep-method{font-size:11px;font-weight:700;color:#f6ad55;font-family:monospace}
+.ep-path{font-size:12px;font-family:monospace;color:#a78bfa}
+.ep-card-header .spacer{flex:1}
+.ep-del{background:none;border:none;color:#fc8181;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px}
+.ep-del:hover{background:#3d1515}
+.ep-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.ep-row{display:flex;align-items:flex-start;gap:10px}
+.ep-label{font-size:11px;color:#718096;width:90px;padding-top:6px;flex-shrink:0;text-transform:uppercase;letter-spacing:.3px}
+.ep-input{flex:1;background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:5px 8px;font-size:12px;font-family:monospace}
+.ep-input:focus{outline:none;border-color:#7c3aed}
+textarea.ep-input{resize:vertical;min-height:60px;line-height:1.5}
+.ep-hint{font-size:11px;color:#4a5568;margin-top:3px}
+.ep-empty{padding:32px;text-align:center;color:#4a5568;font-size:13px}
+
+/* DOCS PANEL */
+.docs-panel{flex:1;overflow-y:auto;padding:20px}
+.docs-endpoint{background:#161b27;border:1px solid #2d3748;border-radius:8px;margin-bottom:16px;overflow:hidden}
+.docs-header{padding:12px 16px;background:#1a2035;display:flex;align-items:center;gap:10px}
+.docs-method{font-size:11px;font-weight:700;color:#f6ad55;font-family:monospace;background:#2d1f00;padding:2px 8px;border-radius:4px}
+.docs-path{font-size:13px;font-family:monospace;color:#a78bfa}
+.docs-body{padding:14px 16px}
+.docs-section{margin-bottom:12px}
+.docs-section-title{font-size:11px;color:#718096;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.docs-table{width:100%;border-collapse:collapse;font-size:12px}
+.docs-table th{text-align:left;padding:5px 8px;color:#718096;border-bottom:1px solid #2d3748;font-weight:500}
+.docs-table td{padding:5px 8px;border-bottom:1px solid #1e2535;color:#94a3b8;font-family:monospace}
+.docs-table td.req{color:#fc8181}
+.docs-table td.opt{color:#718096}
+.curl-box{background:#0f1117;border:1px solid #2d3748;border-radius:6px;padding:12px;font-size:11px;font-family:monospace;color:#a7f3d0;white-space:pre-wrap;word-break:break-all}
+.copy-btn{float:right;font-size:11px;background:#2d3748;color:#e2e8f0;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:-2px}
+.copy-btn:hover{background:#4a5568}
+.no-schema{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#4a5568;gap:8px;font-size:13px}
+
+/* SPEC PAGE */
+.spec-page{flex:1;overflow-y:auto;padding:32px;max-width:900px}
+.spec-page h2{font-size:20px;font-weight:700;color:#a78bfa;margin-bottom:8px}
+.spec-page h3{font-size:14px;font-weight:600;color:#e2e8f0;margin:20px 0 8px}
+.spec-page p{font-size:13px;color:#94a3b8;line-height:1.7;margin-bottom:10px}
+.spec-page pre{background:#161b27;border:1px solid #2d3748;border-radius:8px;padding:14px;font-size:12px;line-height:1.6;overflow-x:auto;margin-bottom:14px;color:#e2e8f0}
+.spec-page table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px}
+.spec-page th{text-align:left;padding:7px 10px;background:#161b27;color:#718096;font-weight:500;border-bottom:1px solid #2d3748}
+.spec-page td{padding:7px 10px;border-bottom:1px solid #1e2535;color:#94a3b8}
+.spec-page td code{color:#a78bfa;font-family:monospace}
+hr{border:none;border-top:1px solid #2d3748;margin:20px 0}
+
+/* JS SCRIPTS TAB */
+.file-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s}
+.file-item:hover{background:#1e2535}
+.file-item.active{background:#2d1f63}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-size:11px;color:#718096;margin-top:2px}
+.file-del{opacity:0;background:none;border:none;color:#fc8181;cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px}
+.file-item:hover .file-del{opacity:1}
+.file-del:hover{background:#3d1515}
+.empty-state{padding:24px 14px;text-align:center;color:#4a5568;font-size:13px;line-height:1.6}
+.editor-topbar{display:none;align-items:center;gap:10px;padding:8px 16px;background:#161b27;border-bottom:1px solid #2d3748;flex-shrink:0}
+.editor-filename{font-size:13px;font-weight:600;color:#a78bfa}
+.editor-mount{font-size:11px;color:#4a5568;background:#1e2535;padding:2px 8px;border-radius:4px;font-family:monospace}
+#cmWrap{display:none;flex:1;overflow:hidden}
+
+/* TOAST */
+.toast-wrap{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999}
+.toast{padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;animation:slideIn .2s ease;max-width:340px}
+.toast.ok{background:#065f46;color:#a7f3d0;border:1px solid #059669}
+.toast.err{background:#7f1d1d;color:#fca5a5;border:1px solid #dc2626}
+.toast.info{background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>⚡ API Manager</h1>
+  <div class="spacer"></div>
+  
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="gql">GraphQL 接口</div>
+  <div class="tab" data-tab="scripts">JS 脚本</div>
+  <div class="tab" data-tab="spec">规范文档</div>
+</div>
+
+<div class="layout">
+
+<!-- ═══════════════════════════════════════════════ GQL TAB -->
+<div class="page active" id="tab-gql">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Schemas</span>
+      <button class="btn btn-ghost btn-sm" id="gqlRefreshBtn">↻</button>
+    </div>
+    <div class="schema-list" id="gqlList"><div class="empty-state">Loading...</div></div>
+    <div class="new-bar">
+      <input type="text" id="newSchemaName" placeholder="wallet, game...">
+      <button class="btn btn-primary btn-sm" id="newSchemaBtn">＋</button>
+    </div>
+  </div>
+
+  <div class="editor-area">
+    <div class="editor-toolbar" id="gqlToolbar">
+      <span class="schema-title" id="gqlSchemaTitle"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="gqlToggleBtn">禁用</button>
+      <button class="btn btn-success btn-sm" id="gqlSaveBtn">💾 保存</button>
+      <button class="btn btn-danger btn-sm" id="gqlDeleteBtn">🗑</button>
+    </div>
+    <div class="editor-tabs" id="gqlEditorTabs">
+      <div class="editor-tab active" data-panel="typedefs">TypeDefs</div>
+      <div class="editor-tab" data-panel="resolvers">Resolvers</div>
+      <div class="editor-tab" data-panel="endpoints">REST 端点</div>
+      <div class="editor-tab" data-panel="docs">📋 调用文档</div>
+    </div>
+    <div class="editor-panels" id="gqlEditorPanels">
+      <!-- TypeDefs -->
+      <div class="editor-panel active" id="panel-typedefs">
+        <div id="typedefsWrap" style="flex:1;overflow:hidden"></div>
+      </div>
+      <!-- Resolvers -->
+      <div class="editor-panel" id="panel-resolvers">
+        <div id="resolversWrap" style="flex:1;overflow:hidden"></div>
+      </div>
+      <!-- Endpoints -->
+      <div class="editor-panel" id="panel-endpoints">
+        <div id="endpointsWrap" style="flex:1;overflow:hidden"></div>
+      </div>
+      <!-- Docs -->
+      <div class="editor-panel" id="panel-docs">
+        <div class="docs-panel" id="docsPanel"></div>
+      </div>
+    </div>
+    <div class="placeholder" id="gqlPlaceholder">
+      <div class="icon">⚡</div>
+      <p>选择左侧 Schema 或新建一个</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ SCRIPTS TAB -->
+<div class="page" id="tab-scripts">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Scripts</span>
+      <button class="btn btn-ghost btn-sm" id="refreshBtn">↻</button>
+    </div>
+    <div class="schema-list" id="fileList"><div class="empty-state">Loading...</div></div>
+    <div class="new-bar">
+      <input type="text" id="newFileName" placeholder="new-route.js">
+      <button class="btn btn-primary btn-sm" id="createBtn">＋</button>
+    </div>
+  </div>
+  <div class="editor-area">
+    <div class="editor-topbar" id="editorTopbar">
+      <span class="editor-filename" id="editorFilename"></span>
+      <span class="editor-mount" id="editorMount"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-success btn-sm" id="saveBtn">💾 保存</button>
+    </div>
+    <div class="placeholder" id="scriptPlaceholder">
+      <div class="icon">📂</div><p>选择脚本或新建一个</p>
+    </div>
+    <div id="cmWrap"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ SPEC TAB -->
+<div class="page" id="tab-spec">
+  <div class="spec-page">
+    <h2>Schema 规范</h2>
+    <p>每个 Schema 由三部分组成：<strong>TypeDefs</strong>、<strong>Resolvers</strong>、<strong>REST 端点</strong>。保存后立即生效。</p>
+    <hr>
+    <h3>1. TypeDefs — GraphQL SDL</h3>
+    <pre>extend type Query {
+  balance(userName: String!, currency: String!): WalletResult
+}
+
+extend type Mutation {
+  bet(transactionId: String!, userName: String!, currency: String!, betAmount: Float!): WalletResult
+  payout(transactionId: String!, userName: String!, currency: String!, payAmount: Float!): WalletResult
+}
+
+type WalletResult {
+  userName: String
+  currency: String
+  balance: Float
+  error: String
+}</pre>
+
+    <h3>2. Resolvers — JS 函数体</h3>
+    <pre>const cache = new Map();
+
+async function getOrCreate(userName) {
+  let user = await prisma.user.findUnique({ where: { username: userName } });
+  if (!user) user = await prisma.user.create({
+    data: { username: userName, balance: 0, environment: 'prod', userId: BigInt(Date.now()) }
+  });
+  return user;
+}
+
+return {
+  Query: {
+    balance: async (_parent, { userName, currency }) => {
+      const user = await getOrCreate(userName);
+      return { userName, currency, balance: Number(user.balance), error: null };
+    }
+  },
+  Mutation: {
+    bet: async (_parent, { transactionId, userName, currency, betAmount }) => {
+      if (cache.has(transactionId)) return cache.get(transactionId);
+      const user = await getOrCreate(userName);
+      if (Number(user.balance) < betAmount)
+        return { userName, currency, balance: Number(user.balance), error: 'insufficient balance' };
+      const updated = await prisma.user.update({
+        where: { username: userName },
+        data: { balance: { decrement: betAmount } }
+      });
+      const result = { userName, currency, balance: Number(updated.balance), error: null };
+      cache.set(transactionId, result);
+      return result;
+    }
+  }
+};</pre>
+
+    <h3>3. REST 端点配置（JSON）</h3>
+    <p>每个端点定义请求参数、GraphQL query、字段映射。系统自动生成 <code>POST /rpc/{schemaName}/{operation}</code> 路由。</p>
+    <table>
+      <tr><th>字段</th><th>说明</th></tr>
+      <tr><td><code>required</code></td><td>必填的请求体字段（除 requestId/requestAt 之外）</td></tr>
+      <tr><td><code>optional</code></td><td>选填字段</td></tr>
+      <tr><td><code>query</code></td><td>执行的 GraphQL query/mutation 字符串</td></tr>
+      <tr><td><code>rootField</code></td><td>从 GraphQL 结果里取哪个字段作为 data</td></tr>
+      <tr><td><code>mapping</code></td><td>GraphQL 变量名 → 请求体字段名的映射</td></tr>
+      <tr><td><code>errorCodes</code></td><td>GraphQL error 字符串 → REST errorCode 的映射</td></tr>
+    </table>
+
+    <h3>4. 调用格式（自动生成）</h3>
+    <pre>curl -X POST "https://your-server.com/rpc/wallet/bet" \
+  -H "Content-Type: application/json" \
+  -H "x-password: ak_live_demo" \
+  -d '{
+    "requestId": "req-001",
+    "requestAt": 1700000000000,
+    "userName": "alice",
+    "currency": "USD",
+    "betAmount": 50
+  }'</pre>
+
+    <h3>5. 响应格式（统一）</h3>
+    <pre>{
+  "requestId": "req-001",
+  "success": true,
+  "data": { "userName": "alice", "currency": "USD", "balance": 950 },
+  "errorCode": "",
+  "errorMessage": ""
+}</pre>
+  </div>
+</div>
+
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const BASE = window.location.origin;
+
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(BASE + path, opts);
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { throw new Error('Server ' + res.status + ': ' + text.slice(0, 200)); }
+}
+
+async function restApi(path, body = {}) {
+  const payload = { requestId: crypto.randomUUID(), requestAt: Date.now(), ...body };
+  const res = await fetch(BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { throw new Error('Server: ' + text.slice(0, 200)); }
+}
+
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  $('toastWrap').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    $('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'gql') loadSchemas();
+    if (tab.dataset.tab === 'scripts') loadFiles();
+  });
+});
+
+// ══════════════════════════════════════════════════════════ GQL PAGE
+let edTypedefs = null, edResolvers = null, edEndpoints = null;
+let currentSchema = null;
+let schemas = [];
+let endpoints = {}; // { opName: { required, optional, query, rootField, mapping, errorCodes } }
+
+function mkEditor(wrapId) {
+  const wrap = $(wrapId);
+  wrap.innerHTML = `<textarea id="${wrapId}_cm"></textarea>`;
+  const ed = CodeMirror.fromTextArea($(`${wrapId}_cm`), {
+    mode: 'javascript', theme: 'dracula', lineNumbers: true,
+    matchBrackets: true, autoCloseBrackets: true, indentUnit: 2, tabSize: 2,
+  });
+  ed.setSize('100%', '100%');
+  return ed;
+}
+
+function showEditorUI(show) {
+  $('gqlToolbar').style.display    = show ? 'flex' : 'none';
+  $('gqlEditorTabs').style.display = show ? 'flex' : 'none';
+  $('gqlEditorPanels').style.display = show ? 'block' : 'none';
+  $('gqlPlaceholder').style.display  = show ? 'none'  : 'flex';
+}
+
+// editor sub-tabs
+document.querySelectorAll('.editor-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.editor-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.editor-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    $('panel-' + tab.dataset.panel).classList.add('active');
+    if (tab.dataset.panel === 'docs') renderDocs();
+    if (edTypedefs)  edTypedefs.refresh();
+    if (edResolvers) edResolvers.refresh();
+  });
+});
+
+async function loadSchemas() {
+  try {
+    const json = await api('GET', '/schema');
+    schemas = json.data || [];
+    renderSchemaList();
+  } catch (err) { toast('加载失败: ' + err.message, 'err'); }
+}
+
+function renderSchemaList() {
+  const el = $('gqlList');
+  if (!schemas.length) { el.innerHTML = '<div class="empty-state">还没有 Schema</div>'; return; }
+  el.innerHTML = schemas.map(s => `
+    <div class="schema-item ${s.name === currentSchema?.name ? 'active' : ''}" data-name="${s.name}">
+      <span>⚡</span>
+      <div class="info"><div class="name">${s.name}</div><div class="meta">${new Date(s.updatedAt).toLocaleTimeString()}</div></div>
+      <span class="badge ${s.enabled ? 'badge-on' : 'badge-off'}">${s.enabled ? 'ON' : 'OFF'}</span>
+    </div>`).join('');
+  el.querySelectorAll('.schema-item').forEach(i => i.addEventListener('click', () => openSchema(i.dataset.name)));
+}
+
+async function openSchema(name, data) {
+  try {
+    let schema = data;
+    if (!schema) {
+      const json = await api('GET', '/schema/' + encodeURIComponent(name));
+      if (!json.success || !json.data) throw new Error(json.error || 'failed to load');
+      schema = json.data;
+    }
+    currentSchema = schema;
+    endpoints = {};
+    try { endpoints = JSON.parse(schema.endpoints || '{}'); } catch {}
+
+    $('gqlSchemaTitle').textContent = name;
+    $('gqlToggleBtn').textContent = schema.enabled ? '禁用' : '启用';
+    showEditorUI(true);
+
+    if (!edTypedefs)  edTypedefs  = mkEditor('typedefsWrap');
+    if (!edResolvers) edResolvers = mkEditor('resolversWrap');
+
+    edTypedefs.setValue(schema.typeDefs || '');
+    edResolvers.setValue(schema.resolvers || '');
+    edTypedefs.refresh(); edResolvers.refresh();
+
+    renderEndpoints();
+    renderSchemaList();
+
+    // Switch to typedefs tab
+    document.querySelectorAll('.editor-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.editor-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.editor-tab[data-panel="typedefs"]').classList.add('active');
+    $('panel-typedefs').classList.add('active');
+  } catch (err) { toast('打开失败: ' + err.message, 'err'); }
+}
+
+async function saveSchema() {
+  if (!currentSchema) return;
+  if (edEndpoints && !syncEndpointsFromEditor()) return;
+  const btn = $('gqlSaveBtn'); btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const json = await api('POST', '/schema', {
+      name: currentSchema.name,
+      typeDefs: edTypedefs.getValue(),
+      resolvers: edResolvers.getValue(),
+      endpoints: JSON.stringify(endpoints),
+      enabled: currentSchema.enabled,
+    });
+    if (!json.success) throw new Error(json.error);
+    currentSchema = json.data;
+    toast('✅ ' + currentSchema.name + ' 已保存');
+    loadSchemas();
+  } catch (err) { toast('保存失败: ' + err.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = '💾 保存'; }
+}
+
+async function toggleSchema() {
+  if (!currentSchema) return;
+  const enabled = !currentSchema.enabled;
+  try {
+    await api('PATCH', '/schema/' + encodeURIComponent(currentSchema.name), { enabled });
+    currentSchema.enabled = enabled;
+    $('gqlToggleBtn').textContent = enabled ? '禁用' : '启用';
+    toast((enabled ? '✅ 已启用 ' : '⏸ 已禁用 ') + currentSchema.name, 'info');
+    loadSchemas();
+  } catch (err) { toast('操作失败: ' + err.message, 'err'); }
+}
+
+async function deleteSchema() {
+  if (!currentSchema || !confirm('确定删除 ' + currentSchema.name + '？')) return;
+  try {
+    await api('DELETE', '/schema/' + encodeURIComponent(currentSchema.name));
+    currentSchema = null; endpoints = {};
+    showEditorUI(false);
+    toast('🗑 已删除', 'info');
+    loadSchemas();
+  } catch (err) { toast('删除失败: ' + err.message, 'err'); }
+}
+
+const SCHEMA_TPL = name => ({
+  typeDefs: `extend type Query {\n  # ${name}Query(arg: String!): ${name}Result\n}\n\nextend type Mutation {\n  # ${name}Mutation(...): ${name}Result\n}\n\ntype ${name}Result {\n  userName: String\n  currency: String\n  balance: Float\n  error: String\n}`,
+  resolvers: `const cache = new Map();\n\nasync function getOrCreate(userName) {\n  let user = await prisma.user.findUnique({ where: { username: userName } });\n  if (!user) user = await prisma.user.create({\n    data: { username: userName, balance: 0, environment: 'prod', userId: BigInt(Date.now()) }\n  });\n  return user;\n}\n\nreturn {\n  Query: {},\n  Mutation: {}\n};`,
+  endpoints: '{}',
+});
+
+async function createSchema() {
+  const name = $('newSchemaName').value.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (!name) return;
+  const tpl = SCHEMA_TPL(name);
+  try {
+    const json = await api('POST', '/schema', { name, typeDefs: tpl.typeDefs, resolvers: tpl.resolvers, endpoints: tpl.endpoints, enabled: true });
+    if (!json.success) throw new Error(json.error);
+    $('newSchemaName').value = '';
+    toast('✅ ' + name + ' 已创建');
+    await loadSchemas();
+    openSchema(name, json.data);
+  } catch (err) { toast('创建失败: ' + err.message, 'err'); }
+}
+
+// ══════════════════════════════════════════════ ENDPOINT EDITOR (JSON)
+
+function renderEndpoints() {
+  if (!edEndpoints) edEndpoints = mkEditor('endpointsWrap');
+  edEndpoints.setValue(JSON.stringify(endpoints, null, 2));
+  edEndpoints.refresh();
+}
+
+function syncEndpointsFromEditor() {
+  try {
+    endpoints = JSON.parse(edEndpoints.getValue());
+    return true;
+  } catch (err) {
+    toast('端点 JSON 格式错误: ' + err.message, 'err');
+    return false;
+  }
+}
+
+function addEndpoint() {}  // no-op, kept for compat
+
+// ══════════════════════════════════════════════════ DOCS
+
+function renderDocs() {
+  const el = $('docsPanel');
+  const ops = Object.keys(endpoints);
+  if (!ops.length) { el.innerHTML = '<div class="no-schema">还没有配置端点<br>在 REST 端点 tab 里添加</div>'; return; }
+
+  const serverUrl = window.location.origin;
+  const schemaName = currentSchema?.name || 'schema';
+
+  el.innerHTML = ops.map(op => {
+    const ep = endpoints[op];
+    const url = `${serverUrl}/rpc/${schemaName}/${op}`;
+    const required = ep.required || [];
+    const optional = ep.optional || [];
+    const allFields = ['requestId (auto)', 'requestAt (auto)', ...required, ...optional];
+
+    // Build example body
+    const exBody = { requestId: 'req-' + Math.random().toString(36).slice(2,8), requestAt: Date.now() };
+    for (const f of required) {
+      if (f.toLowerCase().includes('amount')) exBody[f] = 100;
+      else if (f.toLowerCase().includes('id')) exBody[f] = 'tx-' + Math.random().toString(36).slice(2,8);
+      else exBody[f] = f === 'currency' ? 'USD' : 'alice';
+    }
+
+    const curl = `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -H "x-password: ak_live_demo" \\
+  -d '${JSON.stringify(exBody, null, 4)}'`;
+
+    return `<div class="docs-endpoint">
+      <div class="docs-header">
+        <span class="docs-method">POST</span>
+        <span class="docs-path">/rpc/${schemaName}/${op}</span>
+      </div>
+      <div class="docs-body">
+        <div class="docs-section">
+          <div class="docs-section-title">请求参数</div>
+          <table class="docs-table">
+            <tr><th>字段</th><th>类型</th><th>必填</th></tr>
+            <tr><td>requestId</td><td>string</td><td class="req">是</td></tr>
+            <tr><td>requestAt</td><td>number</td><td class="req">是</td></tr>
+            ${required.map(f => `<tr><td>${f}</td><td>string/number</td><td class="req">是</td></tr>`).join('')}
+            ${optional.map(f => `<tr><td>${f}</td><td>string/number</td><td class="opt">否</td></tr>`).join('')}
+          </table>
+        </div>
+        <div class="docs-section">
+          <div class="docs-section-title">curl 示例</div>
+          <div style="position:relative">
+            <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent).then(()=>toast('已复制','info'))">复制</button>
+            <div class="curl-box">${curl}</div>
+          </div>
+        </div>
+        <div class="docs-section">
+          <div class="docs-section-title">响应格式</div>
+          <div class="curl-box">{
+  "requestId": "req-xxx",
+  "success": true,
+  "data": { ... },
+  "errorCode": "",
+  "errorMessage": ""
+}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════ SCRIPTS
+
+let scriptEditor = null, currentFile = null;
+
+async function loadFiles() {
+  try {
+    const json = await restApi('/script/list');
+    const files = json.data?.files || [];
+    const el = $('fileList');
+    if (!files.length) { el.innerHTML = '<div class="empty-state">还没有脚本</div>'; return; }
+    el.innerHTML = files.map(f => `
+      <div class="file-item ${f.fileName === currentFile ? 'active' : ''}" data-name="${f.fileName}">
+        <span>📄</span>
+        <div class="file-info"><div class="file-name">${f.fileName}</div><div class="file-meta">${(f.size/1024).toFixed(1)}KB</div></div>
+        <button class="file-del" data-del="${f.fileName}">✕</button>
+      </div>`).join('');
+    el.querySelectorAll('.file-item').forEach(i => i.addEventListener('click', () => openFile(i.dataset.name)));
+    el.querySelectorAll('.file-del').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deleteFile(b.dataset.del); }));
+  } catch (err) { toast('加载失败: ' + err.message, 'err'); }
+}
+
+async function openFile(fileName) {
+  try {
+    const json = await restApi('/script/read', { fileName });
+    if (!json.success) throw new Error(json.errorMessage);
+    currentFile = fileName;
+    $('scriptPlaceholder').style.display = 'none';
+    $('cmWrap').style.display = 'block';
+    $('editorTopbar').style.display = 'flex';
+    $('editorFilename').textContent = fileName;
+    $('editorMount').textContent = 'POST /dev/api/v1/' + fileName.replace(/\.js$/, '') + '/*';
+    if (!scriptEditor) {
+      $('cmWrap').innerHTML = '<textarea id="cm"></textarea>';
+      scriptEditor = CodeMirror.fromTextArea($('cm'), { mode:'javascript', theme:'dracula', lineNumbers:true, matchBrackets:true, autoCloseBrackets:true, indentUnit:2, extraKeys:{'Ctrl-S':saveFile,'Cmd-S':saveFile} });
+      scriptEditor.setSize('100%', '100%');
+    }
+    scriptEditor.setValue(json.data.content);
+    scriptEditor.refresh();
+    loadFiles();
+  } catch (err) { toast('打开失败: ' + err.message, 'err'); }
+}
+
+async function saveFile() {
+  if (!currentFile || !scriptEditor) return;
+  const btn = $('saveBtn'); btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const json = await restApi('/script/upload', { fileName: currentFile, content: scriptEditor.getValue(), encoding: 'utf8' });
+    if (!json.success) throw new Error(json.errorMessage);
+    toast('✅ 已保存');
+    loadFiles();
+  } catch (err) { toast('保存失败: ' + err.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = '💾 保存'; }
+}
+
+async function createFile() {
+  let name = $('newFileName').value.trim();
+  if (!name) return;
+  if (!name.endsWith('.js')) name += '.js';
+  const route = name.replace(/\.js$/, '');
+  const tpl = `import { Router } from 'express';\nimport crypto from 'crypto';\n\nconst router = Router();\n\nrouter.post('/example', async (req, res) => {\n  const { requestId } = req.body;\n  return res.json({ requestId: requestId || crypto.randomUUID(), success: true, data: { message: 'Hello from ${route}!' } });\n});\n\nexport default router;\n`;
+  try {
+    const json = await restApi('/script/upload', { fileName: name, content: tpl, encoding: 'utf8' });
+    if (!json.success) throw new Error(json.errorMessage);
+    $('newFileName').value = '';
+    toast('✅ ' + name + ' 已创建');
+    await loadFiles(); openFile(name);
+  } catch (err) { toast('创建失败: ' + err.message, 'err'); }
+}
+
+async function deleteFile(fileName) {
+  if (!confirm('确定删除 ' + fileName + '？')) return;
+  try {
+    const json = await restApi('/script/delete', { fileName });
+    if (!json.success) throw new Error(json.errorMessage);
+    if (currentFile === fileName) {
+      currentFile = null;
+      $('scriptPlaceholder').style.display = 'flex';
+      $('cmWrap').style.display = 'none';
+      $('editorTopbar').style.display = 'none';
+    }
+    toast('🗑 已删除', 'info'); loadFiles();
+  } catch (err) { toast('删除失败: ' + err.message, 'err'); }
+}
+
+// ── WIRE ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  $('gqlRefreshBtn').addEventListener('click', loadSchemas);
+  $('gqlSaveBtn').addEventListener('click', saveSchema);
+  $('gqlToggleBtn').addEventListener('click', toggleSchema);
+  $('gqlDeleteBtn').addEventListener('click', deleteSchema);
+  $('newSchemaBtn').addEventListener('click', createSchema);
+  $('newSchemaName').addEventListener('keydown', e => { if (e.key === 'Enter') createSchema(); });
+
+
+  $('refreshBtn').addEventListener('click', loadFiles);
+  $('saveBtn').addEventListener('click', saveFile);
+  $('createBtn').addEventListener('click', createFile);
+  $('newFileName').addEventListener('keydown', e => { if (e.key === 'Enter') createFile(); });
+  loadSchemas();
+});
+</script>
+</body>
+</html>
